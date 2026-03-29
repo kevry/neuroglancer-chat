@@ -1,26 +1,29 @@
-/* src/ui/chatbot.css */
 .neuroglancer-chatbot-panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 0px;
   overflow: hidden;
   background-color: #222;
   color: white;
+  min-height: 0;
+  height: 100%;
 }
 
 .neuroglancer-chatbot-messages {
-  flex: 1;
+  flex: 1 1 0px;
   overflow-y: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
 }
 
 .neuroglancer-chatbot-message {
   display: flex;
   flex-direction: column;
   max-width: 80%;
+  flex-shrink: 0;
 }
 
 .neuroglancer-chatbot-message.user {
@@ -46,6 +49,33 @@
   word-wrap: break-word;
 }
 
+.neuroglancer-chatbot-text p {
+  margin: 0 0 8px 0;
+}
+
+.neuroglancer-chatbot-text p:last-child {
+  margin-bottom: 0;
+}
+
+.neuroglancer-chatbot-text pre {
+  background-color: #222;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.neuroglancer-chatbot-text code {
+  font-family: monospace;
+  background-color: #222;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.neuroglancer-chatbot-text pre code {
+  padding: 0;
+  background-color: transparent;
+}
+
 .neuroglancer-chatbot-message.user .neuroglancer-chatbot-text {
   background-color: #4a90e2;
   color: white;
@@ -56,6 +86,7 @@
   padding: 10px;
   border-top: 1px solid #444;
   background-color: #111;
+  flex-shrink: 0;
 }
 
 .neuroglancer-chatbot-input {

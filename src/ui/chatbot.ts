@@ -16,6 +16,9 @@
 
 import "#src/ui/chatbot.css";
 
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
 import { SidePanel } from "#src/ui/side_panel.js";
 import type { SidePanelManager } from "#src/ui/side_panel.js";
 import { TrackableSidePanelLocation, DEFAULT_SIDE_PANEL_LOCATION } from "#src/ui/side_panel_location.js";
@@ -59,7 +62,7 @@ export class ChatbotPanel extends SidePanel {
     public viewer: Viewer,
   ) {
     super(sidePanelManager, state.location);
-    this.addTitleBar({ title: "Bam" });
+    this.addTitleBar({ title: "Yoshi" });
 
     const body = document.createElement("div");
     body.classList.add("neuroglancer-chatbot-panel");
@@ -174,7 +177,19 @@ export class ChatbotPanel extends SidePanel {
 
     const textEl = document.createElement("div");
     textEl.classList.add("neuroglancer-chatbot-text");
-    textEl.textContent = text;
+    
+    if (sender === "Bot") {
+      const parsed = marked.parse(text);
+      if (typeof parsed === "string") {
+        textEl.innerHTML = DOMPurify.sanitize(parsed);
+      } else {
+        Promise.resolve(parsed).then((p) => { 
+          textEl.innerHTML = DOMPurify.sanitize(p); 
+        });
+      }
+    } else {
+      textEl.textContent = text;
+    }
 
     msg.appendChild(senderEl);
     msg.appendChild(textEl);
