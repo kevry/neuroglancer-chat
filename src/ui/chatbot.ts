@@ -36,7 +36,7 @@ const DEFAULT_CHATBOT_PANEL_LOCATION = {
 };
 
 const CHATBOT_SERVER = "localhost"; // Change this to your IP when needed
-const CHATBOT_BACKEND_URL = `http://${CHATBOT_SERVER}:5000`;
+const CHATBOT_BACKEND_URL = "" //`http://${CHATBOT_SERVER}:5000`;
 
 export interface ChatbotMessage {
   sender: string;
@@ -47,7 +47,7 @@ export interface ChatbotMessage {
 export class ChatbotPanelState implements Trackable {
   location = new TrackableSidePanelLocation(DEFAULT_CHATBOT_PANEL_LOCATION);
 
-  socket = io(CHATBOT_BACKEND_URL);
+  socket = io();
   messages: ChatbotMessage[] = [];
   isAuthenticated = false;
 
