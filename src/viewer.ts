@@ -984,6 +984,8 @@ export class Viewer extends RefCounted implements ViewerState {
           ),
       }),
     );
+    this.sidePanelManager.element.style.flex = "1";
+    this.sidePanelManager.element.style.minHeight = "0";
     gridContainer.appendChild(this.sidePanelManager.element);
 
     this.registerDisposer(
