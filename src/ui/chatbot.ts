@@ -15,7 +15,6 @@
  */
 
 import "#src/ui/chatbot.css";
-import { yoshiLogoData } from "#src/ui/yoshi_logo_data.js";
 
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -28,6 +27,7 @@ import type { Trackable } from "#src/util/trackable.js";
 import { emptyToUndefined } from "#src/util/json.js";
 import type { Viewer } from "#src/viewer.js";
 import { calculatePanelViewportBounds } from "#src/util/viewer_resolution_stats.js";
+import { yoshiLogoData } from "#src/ui/yoshi_logo_data.js";
 
 const DEFAULT_CHATBOT_PANEL_LOCATION = {
   ...DEFAULT_SIDE_PANEL_LOCATION,
@@ -142,12 +142,24 @@ export class ChatbotPanel extends SidePanel {
       if (e.key === "Enter") this.performAuth();
     });
 
+    // Handle dragging: only allow dragging from the title bar
+    this.element.draggable = false;
+    titleBar.addEventListener("mouseenter", () => {
+      this.element.draggable = true;
+    });
+    titleBar.addEventListener("mouseleave", () => {
+      this.element.draggable = false;
+    });
+
     this.updateUIState();
 
     this.inputArea.classList.add("neuroglancer-chatbot-input-area");
     this.inputBox.type = "text";
     this.inputBox.placeholder = "Ask a question...";
     this.inputBox.classList.add("neuroglancer-chatbot-input");
+
+    // Console log to verify state
+    console.log("Chatbot UI updated with drag-handle logic");
 
     this.sendButton.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></svg>`;
     this.sendButton.classList.add("neuroglancer-chatbot-send");
@@ -164,10 +176,11 @@ export class ChatbotPanel extends SidePanel {
     this.addBody(body);
     body.draggable = false;
 
-    // Stop mouse events from bubbling up to the parent SidePanel's drag handler
-    body.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
-    });
+    // Consolidated event blocking: prevents parent SidePanel from dragging 
+    // when interacting with ANY part of the chatbot body (messages, input, auth).
+    const stopPropagation = (e: Event) => e.stopPropagation();
+    body.addEventListener("mousedown", stopPropagation);
+    body.addEventListener("dragstart", stopPropagation);
 
     this.socket = state.socket;
 
@@ -454,7 +467,7 @@ export class ChatbotPanel extends SidePanel {
     this.introElement.innerHTML = `
       <div class="intro-content">
         <div class="intro-header">
-          <div class="intro-icon"><img src="${yoshiLogoData}" style="width: 90px; height: 50px;"/></div>
+        <div class="intro-icon"><img src="${yoshiLogoData}" style="width: 90px; height: 50px;"/></div>
           <h1>Hi, I'm Yoshi</h1>
           <p>Ask me anything about the segmentation in the <strong>${datasetName}</strong> dataset.</p>
           <p>I can help query the:</p>
