@@ -82,6 +82,7 @@ import {
   observeWatchable,
   TrackableValue,
 } from "#src/trackable_value.js";
+import { ChatbotPanel, ChatbotPanelState } from "#src/ui/chatbot.js";
 import {
   LayerArchiveCountWidget,
   LayerListPanel,
@@ -101,7 +102,6 @@ import {
   MultiToolPaletteManager,
   MultiToolPaletteState,
 } from "#src/ui/tool_palette.js";
-import { ChatbotPanel, ChatbotPanelState } from "#src/ui/chatbot.js";
 import {
   ViewerSettingsPanel,
   ViewerSettingsPanelState,
@@ -191,8 +191,8 @@ export const VIEWER_UI_CONFIG_OPTIONS = [
 
 export type ViewerUIConfiguration = {
   [Key in (typeof VIEWER_UI_CONFIG_OPTIONS)[number]]: Key extends "pickRadius"
-  ? TrackableValue<number>
-  : TrackableBoolean;
+    ? TrackableValue<number>
+    : TrackableBoolean;
 };
 
 export type ViewerUIOptions = {
@@ -225,7 +225,7 @@ function setViewerUiConfiguration(
 
 export interface ViewerOptions
   extends ViewerUIOptions,
-  VisibilityPrioritySpecification {
+    VisibilityPrioritySpecification {
   dataContext: Owned<DataManagementContext>;
   element: HTMLElement;
   credentialsManager: CredentialsManager;
@@ -240,9 +240,9 @@ const defaultViewerOptions =
   "undefined" !== typeof NEUROGLANCER_OVERRIDE_DEFAULT_VIEWER_OPTIONS
     ? NEUROGLANCER_OVERRIDE_DEFAULT_VIEWER_OPTIONS
     : {
-      showLayerDialog: true,
-      resetStateWhenEmpty: true,
-    };
+        showLayerDialog: true,
+        resetStateWhenEmpty: true,
+      };
 
 class TrackableViewerState extends CompoundTrackable {
   constructor(public viewer: Borrowed<Viewer>) {
@@ -1036,11 +1036,7 @@ export class Viewer extends RefCounted implements ViewerState {
       this.sidePanelManager.registerPanel({
         location: this.chatbotPanelState.location,
         makePanel: () =>
-          new ChatbotPanel(
-            this.sidePanelManager,
-            this.chatbotPanelState,
-            this,
-          ),
+          new ChatbotPanel(this.sidePanelManager, this.chatbotPanelState, this),
       }),
     );
 
@@ -1053,15 +1049,18 @@ export class Viewer extends RefCounted implements ViewerState {
     chatIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`;
     chatIcon.title = "Bam";
     chatIcon.addEventListener("click", () => {
-      this.chatbotPanelState.location.visible = !this.chatbotPanelState.location.visible;
+      this.chatbotPanelState.location.visible =
+        !this.chatbotPanelState.location.visible;
     });
     gridContainer.appendChild(chatIcon);
 
     const updateChatIconVisibility = () => {
-      chatIcon.style.display = this.chatbotPanelState.location.visible ? "none" : "";
+      chatIcon.style.display = this.chatbotPanelState.location.visible
+        ? "none"
+        : "";
     };
     this.registerDisposer(
-      this.chatbotPanelState.location.changed.add(updateChatIconVisibility)
+      this.chatbotPanelState.location.changed.add(updateChatIconVisibility),
     );
     updateChatIconVisibility();
 
