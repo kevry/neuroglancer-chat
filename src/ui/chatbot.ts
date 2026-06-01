@@ -16,18 +16,22 @@
 
 import "#src/ui/chatbot.css";
 
-import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { io, Socket } from "socket.io-client";
+import { marked } from "marked";
+import type { Socket } from "socket.io-client";
+import { io } from "socket.io-client";
 
-import { SidePanel } from "#src/ui/side_panel.js";
 import type { SidePanelManager } from "#src/ui/side_panel.js";
-import { TrackableSidePanelLocation, DEFAULT_SIDE_PANEL_LOCATION } from "#src/ui/side_panel_location.js";
-import type { Trackable } from "#src/util/trackable.js";
-import { emptyToUndefined } from "#src/util/json.js";
-import type { Viewer } from "#src/viewer.js";
-import { calculatePanelViewportBounds } from "#src/util/viewer_resolution_stats.js";
+import { SidePanel } from "#src/ui/side_panel.js";
+import {
+  TrackableSidePanelLocation,
+  DEFAULT_SIDE_PANEL_LOCATION,
+} from "#src/ui/side_panel_location.js";
 import { yoshiLogoData } from "#src/ui/yoshi_logo_data.js";
+import { emptyToUndefined } from "#src/util/json.js";
+import type { Trackable } from "#src/util/trackable.js";
+import { calculatePanelViewportBounds } from "#src/util/viewer_resolution_stats.js";
+import type { Viewer } from "#src/viewer.js";
 
 const DEFAULT_CHATBOT_PANEL_LOCATION = {
   ...DEFAULT_SIDE_PANEL_LOCATION,
@@ -35,19 +39,20 @@ const DEFAULT_CHATBOT_PANEL_LOCATION = {
   row: 1,
 };
 
-const CHATBOT_SERVER = "localhost"; // Change this to your IP when needed
-const CHATBOT_BACKEND_URL = "" //`http://${CHATBOT_SERVER}:5000`;
+const CHATBOT_SERVER = "10.117.28.249"; // Change this to your IP when needed
+const CHATBOT_BACKEND_URL = `http://${CHATBOT_SERVER}`;
 
 export interface ChatbotMessage {
   sender: string;
   text: string;
+  thinking?: string;
   images?: string[];
 }
 
 export class ChatbotPanelState implements Trackable {
   location = new TrackableSidePanelLocation(DEFAULT_CHATBOT_PANEL_LOCATION);
 
-  socket = io();
+  socket = io(CHATBOT_BACKEND_URL);
   messages: ChatbotMessage[] = [];
   isAuthenticated = false;
 
@@ -76,6 +81,17 @@ export class ChatbotPanel extends SidePanel {
   private typingIndicator = document.createElement("div");
   private socket: Socket;
 
+  private currentBotMessageElement: HTMLDivElement | null = null;
+  private currentThinkingContainerElement: HTMLDivElement | null = null;
+  private currentThinkingContentElement: HTMLDivElement | null = null;
+  private currentTextContentElement: HTMLDivElement | null = null;
+  private currentThinkingChevronElement: HTMLSpanElement | null = null;
+  private currentThinkingTitleElement: HTMLSpanElement | null = null;
+
+  private accumulatedThinking = "";
+  private accumulatedContent = "";
+  private isStreaming = false;
+
   constructor(
     sidePanelManager: SidePanelManager,
     public state: ChatbotPanelState,
@@ -95,6 +111,17 @@ export class ChatbotPanel extends SidePanel {
       this.messagesContainer.appendChild(this.introElement);
       this.messagesContainer.appendChild(this.typingIndicator);
       this.introElement.style.display = "flex";
+
+      this.isStreaming = false;
+      this.currentBotMessageElement = null;
+      this.currentThinkingContainerElement = null;
+      this.currentThinkingContentElement = null;
+      this.currentTextContentElement = null;
+      this.currentThinkingChevronElement = null;
+      this.currentThinkingTitleElement = null;
+      this.accumulatedThinking = "";
+      this.accumulatedContent = "";
+
       this.socket.emit("clear_chat");
     });
     titleBar.appendChild(newChatButton);
@@ -134,8 +161,12 @@ export class ChatbotPanel extends SidePanel {
     `;
     body.appendChild(this.authElement);
 
-    const authInput = this.authElement.querySelector(".neuroglancer-chatbot-auth-input") as HTMLInputElement;
-    const authButton = this.authElement.querySelector(".neuroglancer-chatbot-auth-button") as HTMLButtonElement;
+    const authInput = this.authElement.querySelector(
+      ".neuroglancer-chatbot-auth-input",
+    ) as HTMLInputElement;
+    const authButton = this.authElement.querySelector(
+      ".neuroglancer-chatbot-auth-button",
+    ) as HTMLButtonElement;
 
     authButton.addEventListener("click", () => this.performAuth());
     authInput.addEventListener("keydown", (e) => {
@@ -176,7 +207,7 @@ export class ChatbotPanel extends SidePanel {
     this.addBody(body);
     body.draggable = false;
 
-    // Consolidated event blocking: prevents parent SidePanel from dragging 
+    // Consolidated event blocking: prevents parent SidePanel from dragging
     // when interacting with ANY part of the chatbot body (messages, input, auth).
     const stopPropagation = (e: Event) => e.stopPropagation();
     body.addEventListener("mousedown", stopPropagation);
@@ -192,25 +223,246 @@ export class ChatbotPanel extends SidePanel {
       console.warn(`Chatbot disconnected: ${reason}`);
     };
 
+    const onChatChunk = (data: {
+      type: "thinking" | "content";
+      chunk: string;
+    }) => {
+      // 1. If we are not currently streaming, start a new streaming message element
+      if (!this.isStreaming) {
+        this.isStreaming = true;
+        this.accumulatedThinking = "";
+        this.accumulatedContent = "";
+        this.setTyping(false); // Hide the typing indicator
+
+        // Hide intro if still visible
+        this.introElement.style.display = "none";
+
+        // Create the message element structure
+        const msg = document.createElement("div");
+        msg.classList.add("neuroglancer-chatbot-message", "bot");
+
+        // Create thinking container
+        const thinkingContainer = document.createElement("div");
+        thinkingContainer.classList.add(
+          "neuroglancer-chatbot-thinking-container",
+        );
+        thinkingContainer.style.display = "none"; // Hide until we actually get a thinking chunk
+
+        const thinkingHeader = document.createElement("div");
+        thinkingHeader.classList.add("neuroglancer-chatbot-thinking-header");
+
+        const thinkingIcon = document.createElement("span");
+        thinkingIcon.classList.add("neuroglancer-chatbot-thinking-icon");
+        thinkingIcon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>`;
+
+        const thinkingTitle = document.createElement("span");
+        thinkingTitle.classList.add("neuroglancer-chatbot-thinking-title");
+        thinkingTitle.textContent = "Thinking Process...";
+
+        const thinkingChevron = document.createElement("span");
+        thinkingChevron.classList.add("neuroglancer-chatbot-thinking-chevron");
+        thinkingChevron.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>`;
+
+        thinkingHeader.appendChild(thinkingIcon);
+        thinkingHeader.appendChild(thinkingTitle);
+        thinkingHeader.appendChild(thinkingChevron);
+
+        const thinkingContent = document.createElement("div");
+        thinkingContent.classList.add("neuroglancer-chatbot-thinking-content");
+
+        thinkingContainer.appendChild(thinkingHeader);
+        thinkingContainer.appendChild(thinkingContent);
+
+        // Setup click listener to toggle collapse state dynamically
+        thinkingHeader.addEventListener("click", () => {
+          const isHidden = thinkingContent.style.display === "none";
+          if (isHidden) {
+            thinkingContent.style.display = "block";
+            thinkingChevron.style.transform = "rotate(0deg)";
+          } else {
+            thinkingContent.style.display = "none";
+            thinkingChevron.style.transform = "rotate(-90deg)";
+          }
+        });
+
+        // Create content text element
+        const textEl = document.createElement("div");
+        textEl.classList.add("neuroglancer-chatbot-text");
+
+        msg.appendChild(thinkingContainer);
+        msg.appendChild(textEl);
+
+        this.messagesContainer.appendChild(msg);
+        this.messagesContainer.appendChild(this.typingIndicator);
+        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+
+        this.currentBotMessageElement = msg;
+        this.currentThinkingContainerElement = thinkingContainer;
+        this.currentThinkingContentElement = thinkingContent;
+        this.currentTextContentElement = textEl;
+        this.currentThinkingChevronElement = thinkingChevron;
+        this.currentThinkingTitleElement = thinkingTitle;
+      }
+
+      // 2. Process chunk based on type
+      if (data.type === "thinking") {
+        if (
+          this.currentThinkingContainerElement &&
+          this.currentThinkingContainerElement.style.display === "none"
+        ) {
+          this.currentThinkingContainerElement.style.display = "block";
+        }
+        this.accumulatedThinking += data.chunk;
+        if (this.currentThinkingContentElement) {
+          this.currentThinkingContentElement.textContent =
+            this.accumulatedThinking;
+        }
+      } else if (data.type === "content") {
+        this.accumulatedContent += data.chunk;
+
+        // Hide the typing indicator if it is shown
+        this.setTyping(false);
+
+        // If content starts, collapse the thinking block and change its title to "Thought process"
+        if (
+          this.currentThinkingTitleElement &&
+          this.currentThinkingTitleElement.textContent === "Thinking Process..."
+        ) {
+          this.currentThinkingTitleElement.textContent = "Thought process";
+          if (this.currentThinkingContainerElement) {
+            this.currentThinkingContainerElement.classList.add("done");
+          }
+          if (
+            this.currentThinkingContentElement &&
+            this.currentThinkingChevronElement
+          ) {
+            this.currentThinkingContentElement.style.display = "none";
+            this.currentThinkingChevronElement.style.transform =
+              "rotate(-90deg)";
+          }
+        }
+
+        if (this.currentTextContentElement) {
+          const parsed = marked.parse(this.accumulatedContent);
+          if (typeof parsed === "string") {
+            this.currentTextContentElement.innerHTML =
+              DOMPurify.sanitize(parsed);
+          } else {
+            Promise.resolve(parsed).then((p) => {
+              if (this.currentTextContentElement) {
+                this.currentTextContentElement.innerHTML =
+                  DOMPurify.sanitize(p);
+              }
+            });
+          }
+        }
+      }
+
+      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    };
+
     const onResponse = (json: any) => {
       if (json.update_jsonstate && json.jsonstate) {
         try {
           this.viewer.state.restoreState(json.jsonstate);
         } catch (err) {
           console.error("Failed to apply jsonstate update", err);
-          this.addMessage("Yoshi", `[Internal Error]: Failed to apply viewer state update.`);
+          this.addMessage(
+            "Yoshi",
+            `[Internal Error]: Failed to apply viewer state update.`,
+          );
         }
       }
       this.setTyping(false); // Hide typing dots when response arrives
-      this.addMessage("Yoshi", json.response || JSON.stringify(json));
+
+      const responseText = json.response || "";
+      const thinkingText = json.thinking || "";
+
+      if (this.isStreaming && this.currentBotMessageElement) {
+        // Sync final content in case any chunks were missed
+        this.accumulatedThinking = thinkingText;
+        this.accumulatedContent = responseText;
+
+        if (this.currentThinkingContentElement) {
+          this.currentThinkingContentElement.textContent = thinkingText;
+        }
+
+        if (thinkingText) {
+          if (this.currentThinkingContainerElement) {
+            this.currentThinkingContainerElement.style.display = "block";
+            this.currentThinkingContainerElement.classList.add("done");
+          }
+          if (this.currentThinkingTitleElement) {
+            this.currentThinkingTitleElement.textContent = "Thought process";
+          }
+          if (
+            this.currentThinkingContentElement &&
+            this.currentThinkingChevronElement
+          ) {
+            this.currentThinkingContentElement.style.display = "none";
+            this.currentThinkingChevronElement.style.transform =
+              "rotate(-90deg)";
+          }
+        } else {
+          if (this.currentThinkingContainerElement) {
+            this.currentThinkingContainerElement.style.display = "none";
+          }
+        }
+
+        if (this.currentTextContentElement) {
+          const parsed = marked.parse(responseText);
+          if (typeof parsed === "string") {
+            this.currentTextContentElement.innerHTML =
+              DOMPurify.sanitize(parsed);
+          } else {
+            Promise.resolve(parsed).then((p) => {
+              if (this.currentTextContentElement) {
+                this.currentTextContentElement.innerHTML =
+                  DOMPurify.sanitize(p);
+              }
+            });
+          }
+        }
+
+        // Save into message history
+        this.state.messages.push({
+          sender: "Yoshi",
+          text: responseText,
+          thinking: thinkingText || undefined,
+        });
+      } else {
+        // Fallback for non-streaming or if we didn't receive any chunks
+        this.addMessage(
+          "Yoshi",
+          responseText || JSON.stringify(json),
+          undefined,
+          false,
+          thinkingText || undefined,
+        );
+      }
+
+      // Reset streaming flags
+      this.isStreaming = false;
+      this.currentBotMessageElement = null;
+      this.currentThinkingContainerElement = null;
+      this.currentThinkingContentElement = null;
+      this.currentTextContentElement = null;
+      this.currentThinkingChevronElement = null;
+      this.currentThinkingTitleElement = null;
+
+      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     };
 
     const onError = (err: any) => {
-      this.addMessage("Yoshi", `[Backend Error]: ${err.message || JSON.stringify(err)}`);
+      this.addMessage(
+        "Yoshi",
+        `[Backend Error]: ${err.message || JSON.stringify(err)}`,
+      );
     };
 
     this.socket.on("connect", onConnect);
     this.socket.on("disconnect", onDisconnect);
+    this.socket.on("chat_chunk", onChatChunk);
     this.socket.on("chat_response", onResponse);
     this.socket.on("error", onError);
 
@@ -221,6 +473,7 @@ export class ChatbotPanel extends SidePanel {
     this.registerDisposer(() => {
       this.socket.off("connect", onConnect);
       this.socket.off("disconnect", onDisconnect);
+      this.socket.off("chat_chunk", onChatChunk);
       this.socket.off("chat_response", onResponse);
       this.socket.off("error", onError);
     });
@@ -229,7 +482,7 @@ export class ChatbotPanel extends SidePanel {
     if (this.state.messages.length > 0) {
       this.introElement.style.display = "none";
       for (const msg of this.state.messages) {
-        this.addMessage(msg.sender, msg.text, msg.images, true);
+        this.addMessage(msg.sender, msg.text, msg.images, true, msg.thinking);
       }
     }
 
@@ -242,13 +495,19 @@ export class ChatbotPanel extends SidePanel {
       const dataUrls: string[] = [];
       try {
         this.viewer.display.draw(); // Synchronously render to WebGL buffer
-        const { individualRenderPanelViewports } = calculatePanelViewportBounds(this.viewer.display.panels);
+        const { individualRenderPanelViewports } = calculatePanelViewportBounds(
+          this.viewer.display.panels,
+        );
         const panels = individualRenderPanelViewports.slice(0, 4); // Up to 4 images
         for (const viewportBounds of panels) {
           const left = Math.max(0, Math.round(viewportBounds.left));
           const top = Math.max(0, Math.round(viewportBounds.top));
-          const cropWidth = Math.round(viewportBounds.right - viewportBounds.left);
-          const cropHeight = Math.round(viewportBounds.bottom - viewportBounds.top);
+          const cropWidth = Math.round(
+            viewportBounds.right - viewportBounds.left,
+          );
+          const cropHeight = Math.round(
+            viewportBounds.bottom - viewportBounds.top,
+          );
 
           if (cropWidth <= 0 || cropHeight <= 0) continue;
 
@@ -274,7 +533,7 @@ export class ChatbotPanel extends SidePanel {
               0,
               0,
               safeWidth,
-              safeHeight
+              safeHeight,
             );
             dataUrls.push(canvas.toDataURL("image/png"));
           }
@@ -285,14 +544,29 @@ export class ChatbotPanel extends SidePanel {
 
       this.addMessage("You", text, dataUrls);
 
+      // Reset streaming state for the upcoming response
+      this.isStreaming = false;
+      this.currentBotMessageElement = null;
+      this.currentThinkingContainerElement = null;
+      this.currentThinkingContentElement = null;
+      this.currentTextContentElement = null;
+      this.currentThinkingChevronElement = null;
+      this.currentThinkingTitleElement = null;
+      this.accumulatedThinking = "";
+      this.accumulatedContent = "";
+
       const metadata: any = {};
       try {
         const v = this.viewer;
         if (v.navigationState.position.value) {
-          metadata.positionInVolume = Array.from(v.navigationState.position.value);
+          metadata.positionInVolume = Array.from(
+            v.navigationState.position.value,
+          );
         }
         if (v.navigationState.coordinateSpace.value.scales) {
-          metadata.resolution = Array.from(v.navigationState.coordinateSpace.value.scales);
+          metadata.resolution = Array.from(
+            v.navigationState.coordinateSpace.value.scales,
+          );
         }
         if (v.mouseState.position) {
           metadata.cursorPosition = Array.from(v.mouseState.position);
@@ -303,20 +577,28 @@ export class ChatbotPanel extends SidePanel {
           metadata.activeLayer = {
             name: managedLayer.name,
             archived: managedLayer.archived,
-            visible: managedLayer.visible
+            visible: managedLayer.visible,
           };
           const userLayer = managedLayer.layer;
           if (userLayer) {
-            const layerType = (userLayer.constructor as any).type || (userLayer as any).type;
+            const layerType =
+              (userLayer.constructor as any).type || (userLayer as any).type;
             metadata.activeLayer.type = layerType;
             if (userLayer.dataSources && userLayer.dataSources.length > 0) {
-              metadata.activeLayer.cloudPath = userLayer.dataSources[0].spec.url;
+              metadata.activeLayer.cloudPath =
+                userLayer.dataSources[0].spec.url;
             }
             // For segmentation layers, try to get visible segments
-            if ((userLayer as any).displayState && (userLayer as any).displayState.segmentationGroupState) {
-              const segGroupState = (userLayer as any).displayState.segmentationGroupState.value;
+            if (
+              (userLayer as any).displayState &&
+              (userLayer as any).displayState.segmentationGroupState
+            ) {
+              const segGroupState = (userLayer as any).displayState
+                .segmentationGroupState.value;
               if (segGroupState && segGroupState.visibleSegments) {
-                metadata.activeLayer.visibleSegments = Array.from(segGroupState.visibleSegments);
+                metadata.activeLayer.visibleSegments = Array.from(
+                  segGroupState.visibleSegments,
+                );
               }
             }
           }
@@ -329,16 +611,18 @@ export class ChatbotPanel extends SidePanel {
 
       const payload = {
         prompt: text,
-        images: dataUrls.map(data => ({ type: "image/png", data })),
-        metadata: metadata
+        images: dataUrls.map((data) => ({ type: "image/png", data })),
+        metadata: metadata,
       };
 
-      console.log("Right before the emit")
+      console.log("Right before the emit");
 
       const payloadString = JSON.stringify(payload, (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        typeof value === "bigint" ? value.toString() : value,
       );
-      console.log(`Emitting chat_message. Payload size: ${(payloadString.length / 1024).toFixed(2)} KB`);
+      console.log(
+        `Emitting chat_message. Payload size: ${(payloadString.length / 1024).toFixed(2)} KB`,
+      );
 
       this.setTyping(true); // Show typing dots
       this.socket.emit("chat_message", JSON.parse(payloadString));
@@ -354,9 +638,15 @@ export class ChatbotPanel extends SidePanel {
     });
   }
 
-  addMessage(sender: string, text: string, images?: string[], skipSave = false) {
+  addMessage(
+    sender: string,
+    text: string,
+    images?: string[],
+    skipSave = false,
+    thinking?: string,
+  ) {
     if (!skipSave) {
-      this.state.messages.push({ sender, text, images });
+      this.state.messages.push({ sender, text, images, thinking });
     }
     // Hide intro on first message
     this.introElement.style.display = "none";
@@ -364,6 +654,55 @@ export class ChatbotPanel extends SidePanel {
     const msg = document.createElement("div");
     msg.classList.add("neuroglancer-chatbot-message");
     msg.classList.add(sender === "Yoshi" ? "bot" : "user");
+
+    if (sender === "Yoshi" && thinking) {
+      const thinkingContainer = document.createElement("div");
+      thinkingContainer.classList.add(
+        "neuroglancer-chatbot-thinking-container",
+        "done",
+      );
+
+      const thinkingHeader = document.createElement("div");
+      thinkingHeader.classList.add("neuroglancer-chatbot-thinking-header");
+
+      const thinkingIcon = document.createElement("span");
+      thinkingIcon.classList.add("neuroglancer-chatbot-thinking-icon");
+      thinkingIcon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>`;
+
+      const thinkingTitle = document.createElement("span");
+      thinkingTitle.classList.add("neuroglancer-chatbot-thinking-title");
+      thinkingTitle.textContent = "Thought process";
+
+      const thinkingChevron = document.createElement("span");
+      thinkingChevron.classList.add("neuroglancer-chatbot-thinking-chevron");
+      thinkingChevron.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>`;
+      thinkingChevron.style.transform = "rotate(-90deg)"; // collapsed by default
+
+      thinkingHeader.appendChild(thinkingIcon);
+      thinkingHeader.appendChild(thinkingTitle);
+      thinkingHeader.appendChild(thinkingChevron);
+
+      const thinkingContent = document.createElement("div");
+      thinkingContent.classList.add("neuroglancer-chatbot-thinking-content");
+      thinkingContent.style.display = "none";
+      thinkingContent.textContent = thinking;
+
+      thinkingContainer.appendChild(thinkingHeader);
+      thinkingContainer.appendChild(thinkingContent);
+
+      thinkingHeader.addEventListener("click", () => {
+        const isHidden = thinkingContent.style.display === "none";
+        if (isHidden) {
+          thinkingContent.style.display = "block";
+          thinkingChevron.style.transform = "rotate(0deg)";
+        } else {
+          thinkingContent.style.display = "none";
+          thinkingChevron.style.transform = "rotate(-90deg)";
+        }
+      });
+
+      msg.appendChild(thinkingContainer);
+    }
 
     const senderEl = document.createElement("div");
     senderEl.classList.add("neuroglancer-chatbot-sender");
@@ -441,7 +780,9 @@ export class ChatbotPanel extends SidePanel {
 
       if (!sourceUrl) return;
 
-      const response = await fetch(`${CHATBOT_BACKEND_URL}/api/segmentation_metadata?segmentation_source=${encodeURIComponent(sourceUrl)}`);
+      const response = await fetch(
+        `${CHATBOT_BACKEND_URL}/api/segmentation_metadata?segmentation_source=${encodeURIComponent(sourceUrl)}`,
+      );
       if (response.ok) {
         const data = await response.json();
         this.updateIntroUI(data.dataset_name, data.metadata);
@@ -455,13 +796,19 @@ export class ChatbotPanel extends SidePanel {
     const capabilities: string[] = [];
 
     if (metadata.synapse_table?.source) {
-      capabilities.push(`<span class="capability-tag" title="Source: ${metadata.synapse_table.source}">Synapse Table</span>`);
+      capabilities.push(
+        `<span class="capability-tag" title="Source: ${metadata.synapse_table.source}">Synapse Table</span>`,
+      );
     }
     if (metadata.seatable?.source) {
-      capabilities.push(`<span class="capability-tag" title="Source: ${metadata.seatable.source}">SeaTable</span>`);
+      capabilities.push(
+        `<span class="capability-tag" title="Source: ${metadata.seatable.source}">SeaTable</span>`,
+      );
     }
     if (metadata.caveclient?.source) {
-      capabilities.push(`<span class="capability-tag" title="Source: ${metadata.caveclient.source}">CaveClient</span>`);
+      capabilities.push(
+        `<span class="capability-tag" title="Source: ${metadata.caveclient.source}">CaveClient</span>`,
+      );
     }
 
     this.introElement.innerHTML = `
@@ -474,7 +821,7 @@ export class ChatbotPanel extends SidePanel {
         </div>
         <div class="intro-capabilities">
           <div class="capability-tags">
-            ${capabilities.join('')}
+            ${capabilities.join("")}
           </div>
         </div>
         <div class="intro-footer">Alpha Test v1</div>
@@ -495,7 +842,9 @@ export class ChatbotPanel extends SidePanel {
     if (code) payload.code = code;
 
     if (!email && !code) {
-      const authInput = this.authElement.querySelector(".neuroglancer-chatbot-auth-input") as HTMLInputElement;
+      const authInput = this.authElement.querySelector(
+        ".neuroglancer-chatbot-auth-input",
+      ) as HTMLInputElement;
       const inputCode = authInput.value.trim();
       if (!inputCode) return;
       payload.code = inputCode;
@@ -505,7 +854,7 @@ export class ChatbotPanel extends SidePanel {
       const response = await fetch(`${CHATBOT_BACKEND_URL}/api/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -513,8 +862,12 @@ export class ChatbotPanel extends SidePanel {
         this.updateUIState();
         this.loadMetadata(); // Load metadata after successful auth
       } else if (!email) {
-        const authError = this.authElement.querySelector(".auth-error") as HTMLElement;
-        const authInput = this.authElement.querySelector(".neuroglancer-chatbot-auth-input") as HTMLInputElement;
+        const authError = this.authElement.querySelector(
+          ".auth-error",
+        ) as HTMLElement;
+        const authInput = this.authElement.querySelector(
+          ".neuroglancer-chatbot-auth-input",
+        ) as HTMLInputElement;
         authError.style.display = "block";
         authInput.value = "";
       }
@@ -540,8 +893,14 @@ export class ChatbotPanel extends SidePanel {
         const p = provider as any;
 
         // Try to find anything that looks like an email in the provider itself
-        const candidates = [p.email, p.userId, p.userId_, p.username, p.identity];
-        if (typeof key === 'string' && key.includes('@')) candidates.push(key);
+        const candidates = [
+          p.email,
+          p.userId,
+          p.userId_,
+          p.username,
+          p.identity,
+        ];
+        if (typeof key === "string" && key.includes("@")) candidates.push(key);
 
         // Also look into the "credentials" if they are already loaded
         if (p.credentials && p.credentials.credentials) {
@@ -550,7 +909,11 @@ export class ChatbotPanel extends SidePanel {
         }
 
         for (const candidate of candidates) {
-          if (candidate && typeof candidate === 'string' && candidate.includes('@')) {
+          if (
+            candidate &&
+            typeof candidate === "string" &&
+            candidate.includes("@")
+          ) {
             console.log(`Chatbot: Found potential identity: ${candidate}`);
             await this.performAuth(candidate);
             if (this.state.isAuthenticated) return;

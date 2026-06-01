@@ -346,13 +346,25 @@
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
-.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0; }
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0;
+}
 
 @keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1.0); }
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
 }
 
 /* Floating Chatbot Icon */
@@ -385,4 +397,83 @@
   width: 26px;
   height: 26px;
   fill: currentColor;
+}
+
+/* Thinking Process Styles */
+.neuroglancer-chatbot-thinking-container {
+  background-color: #262626;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.neuroglancer-chatbot-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+}
+
+.neuroglancer-chatbot-thinking-header:hover {
+  background-color: #333;
+  color: #aaa;
+}
+
+.neuroglancer-chatbot-thinking-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4a90e2;
+  transition: transform 0.3s ease;
+}
+
+/* Pulsing effect when actively thinking */
+.neuroglancer-chatbot-thinking-container:not(.done)
+  .neuroglancer-chatbot-thinking-icon {
+  animation: pulse-thinking 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-thinking {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.neuroglancer-chatbot-thinking-title {
+  flex: 1;
+}
+
+.neuroglancer-chatbot-thinking-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.neuroglancer-chatbot-thinking-content {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #aaa;
+  border-top: 1px solid #3c3c3c;
+  background-color: #202020;
+  white-space: pre-wrap;
+  font-family: monospace;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
 }
