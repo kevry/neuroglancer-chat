@@ -39,7 +39,7 @@ const DEFAULT_CHATBOT_PANEL_LOCATION = {
   row: 1,
 };
 
-const CHATBOT_SERVER = "10.117.28.249"; // Change this to your IP when needed
+const CHATBOT_SERVER = "ng.leelab.hms.harvard.edu"; // Change this to your IP when needed
 const CHATBOT_BACKEND_URL = `http://${CHATBOT_SERVER}`;
 
 export interface ChatbotMessage {

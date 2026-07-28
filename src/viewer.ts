@@ -83,6 +83,8 @@ import {
   TrackableValue,
 } from "#src/trackable_value.js";
 import { ChatbotPanel, ChatbotPanelState } from "#src/ui/chatbot.js";
+import { AutomergePanel, AutomergePanelState } from "#src/ui/automerge.js";
+import { DCVPanel, DCVPanelState } from "#src/ui/dcv.js";
 import {
   LayerArchiveCountWidget,
   LayerListPanel,
@@ -453,6 +455,8 @@ export class Viewer extends RefCounted implements ViewerState {
   helpPanelState = new HelpPanelState();
   settingsPanelState = new ViewerSettingsPanelState();
   chatbotPanelState = new ChatbotPanelState();
+  automergePanelState = new AutomergePanelState();
+  dcvPanelState = new DCVPanelState();
   layerSelectedValues = this.registerDisposer(
     new LayerSelectedValues(this.layerManager, this.mouseState),
   );
@@ -897,6 +901,22 @@ export class Viewer extends RefCounted implements ViewerState {
     }
 
     {
+      const button = makeIcon({ text: "AMP", title: "Run Auto Merge Proofreader (AMP)" });
+      this.registerEventListener(button, "click", () => {
+        this.automergePanelState.location.visible = !this.automergePanelState.location.visible;
+      });
+      topRow.appendChild(button);
+    }
+
+    {
+      const button = makeIcon({ text: "DCVs", title: "Aggregate Dense Core Vesicles (DCVs)" });
+      this.registerEventListener(button, "click", () => {
+        this.dcvPanelState.location.visible = !this.dcvPanelState.location.visible;
+      });
+      topRow.appendChild(button);
+    }
+
+    {
       const { helpPanelState } = this;
       const button = this.registerDisposer(
         new CheckboxIcon(helpPanelState.location.watchableVisible, {
@@ -1037,6 +1057,22 @@ export class Viewer extends RefCounted implements ViewerState {
         location: this.chatbotPanelState.location,
         makePanel: () =>
           new ChatbotPanel(this.sidePanelManager, this.chatbotPanelState, this),
+      }),
+    );
+
+    this.registerDisposer(
+      this.sidePanelManager.registerPanel({
+        location: this.automergePanelState.location,
+        makePanel: () =>
+          new AutomergePanel(this.sidePanelManager, this.automergePanelState, this),
+      }),
+    );
+
+    this.registerDisposer(
+      this.sidePanelManager.registerPanel({
+        location: this.dcvPanelState.location,
+        makePanel: () =>
+          new DCVPanel(this.sidePanelManager, this.dcvPanelState, this),
       }),
     );
 
